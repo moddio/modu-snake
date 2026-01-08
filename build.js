@@ -118,9 +118,22 @@ async function build() {
     const watch = args.includes('--watch');
     const serve = args.includes('--serve');
 
+    // Auto-detect: CI/GitHub Actions = production (CDN), otherwise local
+    const isCI = process.env.CI || process.env.GITHUB_ACTIONS;
+    const localEngineUrl = 'http://localhost:3001/dist/modu.min.js';
+    const cdnEngineUrl = `https://cdn.moduengine.com/modu.min.js?v=${Date.now()}`;
+    const engineUrl = isCI ? cdnEngineUrl : localEngineUrl;
+
     if (!fs.existsSync('dist')) {
         fs.mkdirSync('dist');
     }
+
+    // Update engine URL in dist/index.html
+    let indexHtml = fs.readFileSync('dist/index.html', 'utf8');
+    indexHtml = indexHtml.replace(localEngineUrl, engineUrl);
+    indexHtml = indexHtml.replace(/https:\/\/cdn\.moduengine\.com\/modu\.min\.js(\?v=\d+)?/, engineUrl);
+    fs.writeFileSync('dist/index.html', indexHtml);
+    console.log('[build] Engine: ' + (isCI ? 'CDN (CI)' : 'localhost'));
 
     if (watch) {
         const ctx = await esbuild.context(buildOptions);
@@ -128,31 +141,21 @@ async function build() {
         console.log('[build] Watching for changes...');
 
         if (serve) {
-            const http = require('http');
-            const server = http.createServer((req, res) => {
-                // Serve index-dev.html for root path
-                let filePath = req.url === '/' ? '/index-dev.html' : req.url;
-                const fullPath = path.join('dist', filePath);
-                const ext = path.extname(fullPath);
-                const contentTypes = {
-                    '.html': 'text/html',
-                    '.js': 'text/javascript',
-                    '.css': 'text/css',
-                    '.map': 'application/json',
-                };
-                fs.readFile(fullPath, (err, data) => {
-                    if (err) {
-                        res.writeHead(404);
-                        res.end('Not found');
-                        return;
-                    }
-                    res.writeHead(200, { 'Content-Type': contentTypes[ext] || 'text/plain' });
-                    res.end(data);
-                });
+            // Kill any existing process on the port
+            const { execSync } = require('child_process');
+            try {
+                if (process.platform === 'win32') {
+                    execSync('npx kill-port 8081', { stdio: 'ignore' });
+                } else {
+                    execSync('lsof -ti:8081 | xargs kill -9 2>/dev/null || true', { stdio: 'ignore' });
+                }
+            } catch { }
+
+            const { port } = await ctx.serve({
+                servedir: 'dist',
+                port: 8081,
             });
-            server.listen(8081, () => {
-                console.log('[build] Dev server: http://localhost:8081');
-            });
+            console.log(`[build] Serving at http://localhost:${port}`);
         }
     } else {
         await esbuild.build(buildOptions);
