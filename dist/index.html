@@ -42,7 +42,9 @@
     </div>
 
     <!-- Modu Engine (CDN) -->
-    <script src="https://cdn.moduengine.com/modu.min.js"></script>
+    <script>
+        document.write('<script src="https://cdn.moduengine.com/modu.min.js?v=' + Date.now() + '"><\/script>');
+    </script>
     <!-- Game bundle (uses Modu global) -->
     <script src="game.js"></script>
 </body>
